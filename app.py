@@ -145,13 +145,46 @@ COLUMNAS = ["HT", "Region", "Provincia", "Servicio", "Num_Tramos", "Mes",
             "Fecha_NuevoIngreso_Zonal", "Fecha_Validacion_GMS",
             "Estado_Zonal", "Estado_GMS", "Tipo_Trámite"]
 
+def _normalizar_pem(k):
+    """Reconstruye el PEM aunque lleguen \\n literales, espacios o saltos mal puestos."""
+    k = str(k).replace("\\n", "\n")
+    m = re.search(r"-----BEGIN PRIVATE KEY-----(.*?)-----END PRIVATE KEY-----", k, re.S)
+    if not m:
+        return k
+    cuerpo = re.sub(r"\s+", "", m.group(1))
+    lineas = [cuerpo[i:i + 64] for i in range(0, len(cuerpo), 64)]
+    return "-----BEGIN PRIVATE KEY-----\n" + "\n".join(lineas) + "\n-----END PRIVATE KEY-----\n"
+
+def _info_credenciales():
+    if "gcp" in st.secrets and "json" in st.secrets["gcp"]:
+        return "gcp.json", json.loads(st.secrets["gcp"]["json"])
+    return "gcp_service_account", dict(st.secrets["gcp_service_account"])
+
+def diagnostico_credenciales():
+    """Datos NO secretos para depurar (no muestra el cuerpo de la llave)."""
+    try:
+        origen, info = _info_credenciales()
+        k = str(info.get("private_key", ""))
+        return {
+            "origen": origen,
+            "campos": sorted(info.keys()),
+            "client_email": info.get("client_email"),
+            "largo_private_key": len(k),
+            "inicio": k[:30],
+            "final": k[-30:],
+            "saltos_de_linea_reales": k.count("\n"),
+            "barra_n_literales": k.count("\\n"),
+            "tiene_BEGIN": "-----BEGIN PRIVATE KEY-----" in k,
+            "tiene_END": "-----END PRIVATE KEY-----" in k,
+        }
+    except Exception as e:
+        return {"error_al_leer_secrets": f"{type(e).__name__}: {e}"}
+
 @st.cache_resource
 def get_hoja():
-    # Admite el JSON completo pegado en Secrets ([gcp] json = '''...''') o campos separados
-    if "gcp" in st.secrets and "json" in st.secrets["gcp"]:
-        info = json.loads(st.secrets["gcp"]["json"])
-    else:
-        info = dict(st.secrets["gcp_service_account"])
+    _, info = _info_credenciales()
+    if "private_key" in info:
+        info["private_key"] = _normalizar_pem(info["private_key"])
     creds = Credentials.from_service_account_info(
         info,
         scopes=["https://www.googleapis.com/auth/spreadsheets"],
@@ -221,6 +254,8 @@ try:
     df = cargar_datos()
 except Exception as e:
     st.error(f"No se pudo leer la hoja de Google Sheets: {e}")
+    with st.expander("Diagnóstico de la conexión (temporal)"):
+        st.write(diagnostico_credenciales())
     df = pd.DataFrame(columns=COLUMNAS)
 
 # Formatear columna Provincia y ordenar por fecha de ingreso reciente a antigua (Cronológico inverso)
