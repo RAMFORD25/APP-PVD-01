@@ -282,20 +282,41 @@ def actualizar_fila(ht, cambios_fn, provincias_permitidas=None):
     if provincias_permitidas is not None and \
             actual.get("Provincia", "").strip().upper() not in provincias_permitidas:
         raise PermissionError("La HT no pertenece a sus provincias asignadas.")
+    cambios = cambios_fn(actual)
     celdas = [{"range": gspread.utils.rowcol_to_a1(fila, enc.index(k) + 1), "values": [[v]]}
-              for k, v in cambios_fn(actual).items() if k in enc]
+              for k, v in cambios.items() if k in enc]
     ws.batch_update(celdas, value_input_option="USER_ENTERED")
+    try:  # fechas con formato d/m/aaaa (solo estético; el dato ya quedó guardado)
+        reqs = [{"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": fila - 1, "endRowIndex": fila,
+                      "startColumnIndex": enc.index(k), "endColumnIndex": enc.index(k) + 1},
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "DATE", "pattern": "d/m/yyyy"}}},
+            "fields": "userEnteredFormat.numberFormat"}}
+            for k in cambios if k in enc and k.startswith("Fecha_")]
+        if reqs:
+            ws.spreadsheet.batch_update({"requests": reqs})
+    except Exception:
+        pass
 
-def cambios_zonal(nuevo):
+def cambios_zonal(nuevo, fecha=None):
+    """Cambios a escribir al actualizar el estado zonal; 'fecha' la elige el especialista."""
+    fecha = fecha or hoy_lima()
     def f(actual):
+        if fecha > hoy_lima():
+            raise ValueError("La fecha no puede ser futura.")
+        ing = pd.to_datetime(actual.get("Fecha_Ingreso_Zonal", ""), dayfirst=True, errors="coerce")
+        if pd.notna(ing) and pd.Timestamp(fecha) < ing:
+            raise ValueError(f"La fecha no puede ser anterior a la fecha de ingreso ({ing:%d/%m/%Y}).")
+        iso = fecha.isoformat()
         c = {"Estado_Zonal": nuevo}
         if nuevo == "Opinión favorable":
-            c["Fecha_Opinion_Zonal"] = _hoy()
-            c["Estado_GMS"] = ESTADO_GMS_INICIAL
+            c["Fecha_Opinion_Zonal"] = iso
+            if str(actual.get("Estado_GMS", "")).strip().lower() != "validado":
+                c["Estado_GMS"] = ESTADO_GMS_INICIAL  # no pisa una validación ya hecha por Sede Central
         elif nuevo == "Observado":
-            c["Fecha_Observado_Zonal"] = _hoy()
+            c["Fecha_Observado_Zonal"] = iso
         elif nuevo == "En revisión" and actual.get("Estado_Zonal") == "Observado":
-            c["Fecha_NuevoIngreso_Zonal"] = _hoy()
+            c["Fecha_NuevoIngreso_Zonal"] = iso
         return c
     return f
 
@@ -539,7 +560,7 @@ if user["rol"] == "ESPECIALISTA_ZONAL":
             with col_f3:
                 tipo_t = st.selectbox("Tipo de Trámite", ["Solicitud de recursos", "Recursos RNU"])
                 estado_z = st.selectbox("Estado Zonal", ["En revisión", "Opinión favorable", "Observado"])
-                fec_ing = st.date_input("Fecha Ingreso Zonal", hoy_lima())
+                fec_ing = st.date_input("Fecha Ingreso Zonal", hoy_lima(), format="DD/MM/YYYY")
                 
             btn_guardar = st.form_submit_button("💾 Guardar Solicitud en la Zonal")
             if btn_guardar:
@@ -565,10 +586,15 @@ if user["rol"] == "ESPECIALISTA_ZONAL":
         with st.form("form_act_estado"):
             ht_sel = st.selectbox("Seleccione Código HT a modificar:", df_f["HT"].tolist() if not df_f.empty else [])
             nuevo_est_z = st.selectbox("Nuevo Estado Zonal:", ["En revisión", "Opinión favorable", "Observado"])
+            fec_op = st.date_input(
+                "Fecha de Opinión Zonal:", hoy_lima(), format="DD/MM/YYYY",
+                help="Si el estado es 'Opinión favorable' se guarda como Fecha de Opinión Zonal. "
+                     "Si es 'Observado' se guarda como fecha de observación, y si una solicitud observada "
+                     "vuelve a 'En revisión', como fecha de nuevo ingreso.")
             btn_act = st.form_submit_button("🔄 Actualizar Estado Zonal")
             if btn_act and ht_sel:
                 try:
-                    actualizar_fila(ht_sel, cambios_zonal(nuevo_est_z),
+                    actualizar_fila(ht_sel, cambios_zonal(nuevo_est_z, fec_op),
                                     [p.strip().upper() for p in user["provincias"]])
                 except Exception as e:
                     st.error(f"No se pudo actualizar: {e}")
@@ -611,7 +637,7 @@ if user["rol"] == "SEDE_CENTRAL":
         with col_c2:
             nuevo_est_gms = st.selectbox("Estado GMS:", ["En revisión GMS", "Validado", "Observado GMS"])
         with col_c3:
-            fec_gms = st.date_input("Fecha de Validación Central", hoy_lima())
+            fec_gms = st.date_input("Fecha de Validación Central", hoy_lima(), format="DD/MM/YYYY")
             
         btn_gms = st.form_submit_button("🛡️ Actualizar Estado GMS en Sede Central")
         if btn_gms and ht_sel_central:
