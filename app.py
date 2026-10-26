@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 import base64
 import hmac
 import json
@@ -204,8 +204,11 @@ def cargar_datos():
     df = df[df["HT"] != ""].reset_index(drop=True)  # ignora filas en blanco de la tabla
     return df
 
+def hoy_lima():
+    return (datetime.now(timezone.utc) - timedelta(hours=5)).date()
+
 def _hoy():
-    return date.today().isoformat()
+    return hoy_lima().isoformat()
 
 def _buscar_fila(ws, enc, ht):
     col_ht = enc.index("HT") + 1
@@ -536,7 +539,7 @@ if user["rol"] == "ESPECIALISTA_ZONAL":
             with col_f3:
                 tipo_t = st.selectbox("Tipo de Trámite", ["Solicitud de recursos", "Recursos RNU"])
                 estado_z = st.selectbox("Estado Zonal", ["En revisión", "Opinión favorable", "Observado"])
-                fec_ing = st.date_input("Fecha Ingreso Zonal", date.today())
+                fec_ing = st.date_input("Fecha Ingreso Zonal", hoy_lima())
                 
             btn_guardar = st.form_submit_button("💾 Guardar Solicitud en la Zonal")
             if btn_guardar:
@@ -607,7 +610,7 @@ if user["rol"] == "SEDE_CENTRAL":
         with col_c2:
             nuevo_est_gms = st.selectbox("Estado GMS:", ["En revisión GMS", "Validado", "Observado GMS"])
         with col_c3:
-            fec_gms = st.date_input("Fecha de Validación Central", date.today())
+            fec_gms = st.date_input("Fecha de Validación Central", hoy_lima())
             
         btn_gms = st.form_submit_button("🛡️ Actualizar Estado GMS en Sede Central")
         if btn_gms and ht_sel_central:
@@ -673,10 +676,66 @@ with col_ex2:
 
 st.markdown("---")
 
+# ALERTAS DE SOLICITUDES CRÍTICAS
+DIAS_CRITICO = 5  # días en bandeja a partir de los cuales una solicitud se marca como crítica
+
+def mostrar_alertas(df_base):
+    st.markdown("### 🚨 Alertas de Solicitudes Críticas")
+    if df_base.empty or "Estado_Zonal" not in df_base.columns:
+        st.info("No hay solicitudes para evaluar.")
+        return
+    d = df_base.copy()
+
+    def fecha(col):
+        if col in d.columns:
+            return pd.to_datetime(d[col], errors="coerce", dayfirst=True, format="mixed")
+        return pd.Series(pd.NaT, index=d.index, dtype="datetime64[ns]")
+
+    ez = d["Estado_Zonal"].astype(str).str.strip().str.lower()
+    eg = d["Estado_GMS"].astype(str).str.strip().str.lower() if "Estado_GMS" in d.columns \
+        else pd.Series("", index=d.index)
+    ingreso, reingreso = fecha("Fecha_Ingreso_Zonal"), fecha("Fecha_NuevoIngreso_Zonal")
+    opinion, observado = fecha("Fecha_Opinion_Zonal"), fecha("Fecha_Observado_Zonal")
+    hoy = pd.Timestamp(hoy_lima())
+
+    grupos = [
+        ("🆕 Nueva / en revisión zonal", ez == "en revisión", reingreso.fillna(ingreso)),
+        ("🟠 Observada (por subsanar)", ez == "observado", observado.fillna(ingreso)),
+        ("🏛️ Pendiente de validación GMS", (ez == "opinión favorable") & (eg != "validado"), opinion.fillna(ingreso)),
+    ]
+    partes = []
+    for etiqueta, mask, inicio in grupos:
+        sub = d[mask].copy()
+        if sub.empty:
+            continue
+        sub["Tipo de alerta"] = etiqueta
+        sub["_inicio"] = inicio[mask]
+        sub["Días en bandeja"] = (hoy - inicio[mask]).dt.days
+        partes.append(sub)
+    if not partes:
+        st.success("No hay solicitudes pendientes: sin alertas.")
+        return
+
+    al = pd.concat(partes)
+    al["Días en bandeja"] = al["Días en bandeja"].fillna(0).astype(int)
+    al["Nivel"] = al["Días en bandeja"].apply(lambda x: "🔴 Crítica" if x > DIAS_CRITICO else "🟡 En plazo")
+    al["Fecha de inicio"] = al["_inicio"].dt.strftime("%d/%m/%Y").fillna("")
+    al = al.sort_values("Días en bandeja", ascending=False)
+
+    n_crit = int((al["Nivel"] == "🔴 Crítica").sum())
+    n_nuevas = int((al["Tipo de alerta"] == "🆕 Nueva / en revisión zonal").sum())
+    if n_crit:
+        st.error(f"{n_crit} solicitud(es) crítica(s): superan {DIAS_CRITICO} días en bandeja.")
+    else:
+        st.success(f"Sin solicitudes críticas (plazo de referencia: {DIAS_CRITICO} días).")
+    if n_nuevas:
+        st.warning(f"{n_nuevas} solicitud(es) nueva(s) en revisión zonal.")
+    st.dataframe(al[["Nivel", "Tipo de alerta", "HT", "Region", "Provincia", "Fecha de inicio", "Días en bandeja"]],
+                 use_container_width=True, hide_index=True)
+
 # 5. MÓDULOS INFERIORES: SEDE CENTRAL (ANCHO COMPLETO Y 90°) VS ZONALES (DOS COLUMNAS)
 if user["rol"] == "SEDE_CENTRAL":
-    st.markdown("### 🚨 Alertas de Solicitudes Críticas")
-    st.info("No se registran solicitudes críticas con exceso de días en la bandeja actual.")
+    mostrar_alertas(df_f)
     
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("### 📈 Eficiencia: Trámites por Provincia y Mes")
@@ -714,8 +773,7 @@ else:
     col_inf1, col_inf2 = st.columns(2)
 
     with col_inf1:
-        st.markdown("### 🚨 Alertas de Solicitudes Críticas")
-        st.info("No se registran solicitudes críticas con exceso de días en la bandeja actual.")
+        mostrar_alertas(df_f)
 
     with col_inf2:
         st.markdown("### 📈 Eficiencia: Trámites por Provincia y Mes")
