@@ -214,21 +214,44 @@ def _buscar_fila(ws, enc, ht):
             return i
     return None
 
+def _extender_tabla(ws, fila):
+    """Si la fila nueva quedó debajo de la tabla Base_Datos, amplía la tabla hasta ella."""
+    meta = ws.spreadsheet.fetch_sheet_metadata(params={"fields": "sheets(properties(sheetId),tables)"})
+    for sh in meta.get("sheets", []):
+        if sh["properties"]["sheetId"] != ws.id:
+            continue
+        for t in sh.get("tables", []):
+            r = t.get("range", {})
+            if r.get("startRowIndex", 0) == 0 and r.get("endRowIndex", 0) < fila:
+                ws.spreadsheet.batch_update({"requests": [{"updateTable": {
+                    "table": {"tableId": t["tableId"], "range": dict(r, endRowIndex=fila)},
+                    "fields": "range"}}]})
+            return
+
 def registrar_solicitud(datos):
-    """Escribe en la primera fila libre de la tabla (no al final de la hoja)."""
+    """Inserta una fila nueva debajo del último registro de la tabla Base_Datos y la llena."""
     ws = get_hoja()
     enc = ws.row_values(1)
     if _buscar_fila(ws, enc, datos["HT"]):
         raise ValueError(f"La HT {datos['HT']} ya está registrada en la base.")
     col_ht = enc.index("HT") + 1
-    fila = len(ws.col_values(col_ht)) + 1  # primera fila con HT vacía
-    if fila > ws.row_count:
-        ws.add_rows(fila - ws.row_count)
+    fila = len(ws.col_values(col_ht)) + 1  # justo debajo del último registro
+    sid = ws.id
+    try:  # inserta la fila (hereda el formato de la fila anterior; la tabla crece)
+        ws.spreadsheet.batch_update({"requests": [{"insertDimension": {
+            "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": fila - 1, "endIndex": fila},
+            "inheritFromBefore": True}}]})
+    except Exception:
+        if fila > ws.row_count:
+            ws.add_rows(fila - ws.row_count)
     ws.update(range_name=f"A{fila}", values=[[datos.get(h, "") for h in enc]],
               value_input_option="USER_ENTERED")
-    # Formato: fechas d/m/aaaa y listas desplegables como la fila anterior (solo estético)
+    # Lo siguiente es solo estético: si falla, el dato ya quedó guardado
     try:
-        sid = ws.id
+        _extender_tabla(ws, fila)
+    except Exception:
+        pass
+    try:
         reqs = [{"repeatCell": {
             "range": {"sheetId": sid, "startRowIndex": fila - 1, "endRowIndex": fila,
                       "startColumnIndex": i, "endColumnIndex": i + 1},
@@ -241,10 +264,9 @@ def registrar_solicitud(datos):
             fila_nueva = dict(fila_ant, startRowIndex=fila - 1, endRowIndex=fila)
             reqs.append({"copyPaste": {"source": fila_ant, "destination": fila_nueva,
                                        "pasteType": "PASTE_DATA_VALIDATION"}})
-        if reqs:
-            ws.spreadsheet.batch_update({"requests": reqs})
+        ws.spreadsheet.batch_update({"requests": reqs})
     except Exception:
-        pass  # el dato ya quedó guardado
+        pass
 
 def actualizar_fila(ht, cambios_fn, provincias_permitidas=None):
     """Modifica celdas de la fila de una HT. cambios_fn(actual) -> dict {columna: valor}."""
