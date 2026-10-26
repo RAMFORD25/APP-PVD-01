@@ -583,9 +583,9 @@ if user["rol"] == "SEDE_CENTRAL":
     
     df_pendientes_validacion = pd.DataFrame()
     if not df.empty and "Estado_Zonal" in df.columns and "Estado_GMS" in df.columns:
-        cond_opinion = df["Estado_Zonal"].astype(str).str.strip().str.lower() == "opinión favorable"
+        # Sede Central ve TODA solicitud registrada que aún no esté validada (cualquier estado zonal)
         cond_no_validado = df["Estado_GMS"].astype(str).str.strip().str.lower() != "validado"
-        df_pendientes_validacion = df[cond_opinion & cond_no_validado]
+        df_pendientes_validacion = df[cond_no_validado]
     
     ht_mapping = {}
     if not df_pendientes_validacion.empty:
@@ -593,7 +593,8 @@ if user["rol"] == "SEDE_CENTRAL":
             ht_val = str(row["HT"])
             prov_val = str(row.get("Provincia", "Sin Provincia"))
             mes_val = str(row.get("Mes", "Sin Mes"))
-            label_opcion = f"{ht_val} — {prov_val} ({mes_val})"
+            est_z = str(row.get("Estado_Zonal", "")).strip() or "Sin estado"
+            label_opcion = f"{ht_val} — {prov_val} ({mes_val}) · Zonal: {est_z}"
             ht_mapping[label_opcion] = ht_val
 
     lista_opciones_ht = list(ht_mapping.keys())
@@ -605,7 +606,7 @@ if user["rol"] == "SEDE_CENTRAL":
                 sel_label = st.selectbox("Seleccionar Código HT a Validar:", lista_opciones_ht)
                 ht_sel_central = ht_mapping[sel_label]
             else:
-                st.selectbox("Seleccionar Código HT a Validar:", ["No hay HT con opinión favorable pendientes"])
+                st.selectbox("Seleccionar Código HT a Validar:", ["No hay HT pendientes de validación"])
                 ht_sel_central = None
         with col_c2:
             nuevo_est_gms = st.selectbox("Estado GMS:", ["En revisión GMS", "Validado", "Observado GMS"])
