@@ -4,6 +4,7 @@ import plotly.express as px
 from datetime import datetime, date
 import base64
 import hmac
+import json
 import re
 import gspread
 from google.oauth2.service_account import Credentials
@@ -146,8 +147,13 @@ COLUMNAS = ["HT", "Region", "Provincia", "Servicio", "Num_Tramos", "Mes",
 
 @st.cache_resource
 def get_hoja():
+    # Admite el JSON completo pegado en Secrets ([gcp] json = '''...''') o campos separados
+    if "gcp" in st.secrets and "json" in st.secrets["gcp"]:
+        info = json.loads(st.secrets["gcp"]["json"])
+    else:
+        info = dict(st.secrets["gcp_service_account"])
     creds = Credentials.from_service_account_info(
-        dict(st.secrets["gcp_service_account"]),
+        info,
         scopes=["https://www.googleapis.com/auth/spreadsheets"],
     )
     libro = gspread.authorize(creds).open_by_key(SHEET_ID)
