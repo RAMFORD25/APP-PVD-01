@@ -138,7 +138,7 @@ st.markdown("""
 # CONEXIÓN CON GOOGLE SHEETS (cuenta de servicio)
 # ----------------------------------------------------
 SHEET_ID = "1v2Nc7v7JNB2IVFqhXM81WVJvaJgiuh31HNA68WwbOlI"
-NOMBRE_HOJA = "base_solicitudes_recursos"  # pestaña de la base; si no existe se usa la primera
+NOMBRE_HOJA = "BD"  # pestaña de la base; si no existe se usa la primera
 ESTADO_GMS_INICIAL = "En revisión GMS"
 COLUMNAS = ["HT", "Region", "Provincia", "Servicio", "Num_Tramos", "Mes",
             "Fecha_Ingreso_Zonal", "Fecha_Opinion_Zonal", "Fecha_Observado_Zonal",
@@ -201,6 +201,7 @@ def cargar_datos():
     if df.empty:
         return pd.DataFrame(columns=COLUMNAS)
     df["HT"] = df["HT"].astype(str).str.strip()
+    df = df[df["HT"] != ""].reset_index(drop=True)  # ignora filas en blanco de la tabla
     return df
 
 def _hoy():
@@ -214,13 +215,36 @@ def _buscar_fila(ws, enc, ht):
     return None
 
 def registrar_solicitud(datos):
-    """Agrega una fila nueva respetando el orden de los encabezados de la hoja."""
+    """Escribe en la primera fila libre de la tabla (no al final de la hoja)."""
     ws = get_hoja()
     enc = ws.row_values(1)
     if _buscar_fila(ws, enc, datos["HT"]):
         raise ValueError(f"La HT {datos['HT']} ya está registrada en la base.")
-    ws.append_row([datos.get(h, "") for h in enc],
-                  value_input_option="USER_ENTERED", table_range="A1")
+    col_ht = enc.index("HT") + 1
+    fila = len(ws.col_values(col_ht)) + 1  # primera fila con HT vacía
+    if fila > ws.row_count:
+        ws.add_rows(fila - ws.row_count)
+    ws.update(range_name=f"A{fila}", values=[[datos.get(h, "") for h in enc]],
+              value_input_option="USER_ENTERED")
+    # Formato: fechas d/m/aaaa y listas desplegables como la fila anterior (solo estético)
+    try:
+        sid = ws.id
+        reqs = [{"repeatCell": {
+            "range": {"sheetId": sid, "startRowIndex": fila - 1, "endRowIndex": fila,
+                      "startColumnIndex": i, "endColumnIndex": i + 1},
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "DATE", "pattern": "d/m/yyyy"}}},
+            "fields": "userEnteredFormat.numberFormat"}}
+            for i, h in enumerate(enc) if h.startswith("Fecha_")]
+        if fila > 2:
+            fila_ant = {"sheetId": sid, "startRowIndex": fila - 2, "endRowIndex": fila - 1,
+                        "startColumnIndex": 0, "endColumnIndex": len(enc)}
+            fila_nueva = dict(fila_ant, startRowIndex=fila - 1, endRowIndex=fila)
+            reqs.append({"copyPaste": {"source": fila_ant, "destination": fila_nueva,
+                                       "pasteType": "PASTE_DATA_VALIDATION"}})
+        if reqs:
+            ws.spreadsheet.batch_update({"requests": reqs})
+    except Exception:
+        pass  # el dato ya quedó guardado
 
 def actualizar_fila(ht, cambios_fn, provincias_permitidas=None):
     """Modifica celdas de la fila de una HT. cambios_fn(actual) -> dict {columna: valor}."""
