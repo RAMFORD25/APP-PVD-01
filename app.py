@@ -79,6 +79,17 @@ st.markdown("""
     [data-testid="stSidebar"] form button:hover * {
         color: #991b1b !important;
     }
+    /* Cabecera del desplegable de la barra lateral: texto rojo legible sobre fondo blanco */
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary {
+        background-color: #ffffff !important;
+        border-radius: 6px !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary *,
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary svg {
+        color: #dc2626 !important;
+        fill: #dc2626 !important;
+        font-weight: 700 !important;
+    }
     /* Mensajes (éxito/error) dentro de la barra lateral: texto oscuro legible */
     [data-testid="stSidebar"] [data-testid="stAlert"] *,
     [data-testid="stSidebar"] [data-testid="stAlertContainer"] * {
@@ -610,18 +621,25 @@ if st.sidebar.button("CERRAR SESIÓN", key="btn_logout"):
     st.query_params.clear()
     st.rerun()
 
+def _guardar_clave():
+    try:
+        cambiar_clave(st.session_state.usr_key, st.session_state.cc_act,
+                      st.session_state.cc_nueva, st.session_state.cc_conf)
+    except Exception as e:
+        st.session_state["cc_msg"] = ("error", str(e))
+    else:
+        st.session_state["cc_msg"] = ("ok", "Contraseña actualizada. Úsela en su próximo ingreso.")
+        for k in ("cc_act", "cc_nueva", "cc_conf"):
+            st.session_state[k] = ""
+
 with st.sidebar.expander("🔑 Cambiar contraseña"):
-    with st.form("form_cambiar_clave", clear_on_submit=True):
-        clave_act = st.text_input("Contraseña actual", type="password")
-        clave_nueva = st.text_input("Nueva contraseña", type="password")
-        clave_conf = st.text_input("Confirmar nueva contraseña", type="password")
-        if st.form_submit_button("Guardar nueva contraseña"):
-            try:
-                cambiar_clave(st.session_state.usr_key, clave_act, clave_nueva, clave_conf)
-            except Exception as e:
-                st.error(str(e))
-            else:
-                st.success("Contraseña actualizada. Úsela en su próximo ingreso.")
+    st.text_input("Contraseña actual", type="password", key="cc_act")
+    st.text_input("Nueva contraseña", type="password", key="cc_nueva")
+    st.text_input("Confirmar nueva contraseña", type="password", key="cc_conf")
+    st.button("Guardar nueva contraseña", key="btn_cambiar_clave", on_click=_guardar_clave)
+    _msg = st.session_state.pop("cc_msg", None)
+    if _msg:
+        (st.success if _msg[0] == "ok" else st.error)(_msg[1])
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔍 Filtros de Búsqueda")
