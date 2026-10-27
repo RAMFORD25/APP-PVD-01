@@ -59,25 +59,31 @@ st.markdown("""
         color: #991b1b !important;
     }
 
-    /* Botón del formulario "Cambiar contraseña" en la barra lateral: texto rojo sobre fondo blanco */
-    [data-testid="stSidebar"] form button {
+    /* Formulario de ingreso en la barra lateral: sin borde y con botón blanco / texto rojo */
+    [data-testid="stSidebar"] [data-testid="stForm"] {
+        border: none !important;
+        padding: 0 !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stForm"] button,
+    [data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button,
+    [data-testid="stSidebar"] button[kind="secondaryFormSubmit"],
+    [data-testid="stSidebar"] button[kind="primaryFormSubmit"] {
         background-color: #ffffff !important;
         border: 2px solid #ffffff !important;
         border-radius: 6px !important;
-        width: 100% !important;
         min-height: 42px !important;
     }
-    [data-testid="stSidebar"] form button * {
+    [data-testid="stSidebar"] [data-testid="stForm"] button *,
+    [data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button *,
+    [data-testid="stSidebar"] button[kind="secondaryFormSubmit"] *,
+    [data-testid="stSidebar"] button[kind="primaryFormSubmit"] * {
         color: #dc2626 !important;
         font-weight: 800 !important;
-        font-size: 14px !important;
+        font-size: 15px !important;
     }
-    [data-testid="stSidebar"] form button:hover {
+    [data-testid="stSidebar"] [data-testid="stForm"] button:hover {
         background-color: #ffeeef !important;
         border-color: #ffeeef !important;
-    }
-    [data-testid="stSidebar"] form button:hover * {
-        color: #991b1b !important;
     }
     /* Cabecera del desplegable de la barra lateral: texto rojo legible sobre fondo blanco */
     [data-testid="stSidebar"] [data-testid="stExpander"] summary {
@@ -91,6 +97,11 @@ st.markdown("""
         font-weight: 700 !important;
     }
     /* Mensajes (éxito/error) dentro de la barra lateral: texto oscuro legible */
+    [data-testid="stSidebar"] [data-testid="stAlert"],
+    [data-testid="stSidebar"] [data-testid="stAlertContainer"] {
+        background-color: #ffffff !important;
+        border-radius: 6px !important;
+    }
     [data-testid="stSidebar"] [data-testid="stAlert"] *,
     [data-testid="stSidebar"] [data-testid="stAlertContainer"] * {
         color: #1e293b !important;
@@ -396,7 +407,7 @@ USUARIOS = {
     "jparra": {"nombre": "José Parra Benavides", "rol": "ESPECIALISTA_ZONAL", "provincias": ["ACOBAMBA"], "regiones": ["Huancavelica"]},
     "evasquez": {"nombre": "Edgar Vásquez Rivera", "rol": "ESPECIALISTA_ZONAL", "provincias": ["ANGARAES", "CHURCAMPA"], "regiones": ["Huancavelica"]},
     "jponce": {"nombre": "Jhon Ponce Francia", "rol": "ESPECIALISTA_ZONAL", "provincias": ["CASTROVIRREYNA", "HUAYTARÁ"], "regiones": ["Huancavelica"]},
-    "jcarhuaricra": {"nombre": "Jaqueline Judith Carhuaricra Estrella", "rol": "ESPECIALISTA_ZONAL", "provincias": ["HUANCAVELICA"], "regiones": ["Huancavelica"]},
+    "jcarhuaricra": {"nombre": "Jaquelin Judith Carhuaricra Estrella", "rol": "ESPECIALISTA_ZONAL", "provincias": ["HUANCAVELICA"], "regiones": ["Huancavelica"]},
     "rleon": {"nombre": "Randolf Arturo León Rojas", "rol": "ESPECIALISTA_ZONAL", "provincias": ["TAYACAJA"], "regiones": ["Huancavelica"]},
     "atorres": {"nombre": "Alexa Torres Flores", "rol": "ESPECIALISTA_ZONAL", "provincias": ["TACNA", "CANDARAVE", "TARATA", "JORGE BASADRE"], "regiones": ["Tacna"]},
     "lortiz": {"nombre": "Luis Eduardo Ortiz Fonttis", "rol": "ESPECIALISTA_ZONAL", "provincias": ["MARISCAL NIETO", "ILO", "GENERAL SANCHEZ CERRO"], "regiones": ["Moquegua"]}
@@ -483,10 +494,14 @@ st.sidebar.title("🔐 Acceso al Sistema")
 st.sidebar.markdown("---")
 
 if not st.session_state.logged_in:
-    usr = st.sidebar.text_input("Usuario")
-    pwd = st.sidebar.text_input("Contraseña", type="password")
-    
-    if st.sidebar.button("INICIAR SESIÓN", key="btn_login"):
+    # Formulario: envía de una vez lo escrito o autocompletado por el navegador (y funciona con Enter)
+    with st.sidebar.form("form_login"):
+        usr = st.text_input("Usuario", autocomplete="username")
+        pwd = st.text_input("Contraseña", type="password", autocomplete="current-password")
+        enviar_login = st.form_submit_button("INICIAR SESIÓN")
+
+    if enviar_login:
+        usr = usr.strip().lower()
         if verificar_login(usr, pwd):
             st.session_state.logged_in = True
             st.session_state.user = USUARIOS[usr]
@@ -633,9 +648,9 @@ def _guardar_clave():
             st.session_state[k] = ""
 
 with st.sidebar.expander("🔑 Cambiar contraseña"):
-    st.text_input("Contraseña actual", type="password", key="cc_act")
-    st.text_input("Nueva contraseña", type="password", key="cc_nueva")
-    st.text_input("Confirmar nueva contraseña", type="password", key="cc_conf")
+    st.text_input("Contraseña actual", type="password", key="cc_act", autocomplete="current-password")
+    st.text_input("Nueva contraseña", type="password", key="cc_nueva", autocomplete="new-password")
+    st.text_input("Confirmar nueva contraseña", type="password", key="cc_conf", autocomplete="new-password")
     st.button("Guardar nueva contraseña", key="btn_cambiar_clave", on_click=_guardar_clave)
     _msg = st.session_state.pop("cc_msg", None)
     if _msg:
@@ -708,7 +723,9 @@ if user["rol"] == "ESPECIALISTA_ZONAL":
     
     with tab_actualizar:
         with st.form("form_act_estado"):
-            ht_sel = st.selectbox("Seleccione Código HT a modificar:", df_f["HT"].tolist() if not df_f.empty else [])
+            # Lista del registro más reciente al más antiguo (orden en que se registraron en la hoja)
+            ht_sel = st.selectbox("Seleccione Código HT a modificar:",
+                                  df_f.sort_index(ascending=False)["HT"].tolist() if not df_f.empty else [])
             nuevo_est_z = st.selectbox("Nuevo Estado Zonal:", ["En revisión", "Opinión favorable", "Observado"])
             fec_op = st.date_input(
                 "Fecha de Opinión Zonal:", hoy_lima(), format="DD/MM/YYYY",
@@ -735,7 +752,7 @@ if user["rol"] == "SEDE_CENTRAL":
     if not df.empty and "Estado_Zonal" in df.columns and "Estado_GMS" in df.columns:
         # Sede Central ve TODA solicitud registrada que aún no esté validada (cualquier estado zonal)
         cond_no_validado = df["Estado_GMS"].astype(str).str.strip().str.lower() != "validado"
-        df_pendientes_validacion = df[cond_no_validado]
+        df_pendientes_validacion = df[cond_no_validado].sort_index(ascending=False)  # más reciente primero
     
     ht_mapping = {}
     if not df_pendientes_validacion.empty:
