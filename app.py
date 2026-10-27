@@ -59,6 +59,32 @@ st.markdown("""
         color: #991b1b !important;
     }
 
+    /* Botón del formulario "Cambiar contraseña" en la barra lateral: texto rojo sobre fondo blanco */
+    [data-testid="stSidebar"] form button {
+        background-color: #ffffff !important;
+        border: 2px solid #ffffff !important;
+        border-radius: 6px !important;
+        width: 100% !important;
+        min-height: 42px !important;
+    }
+    [data-testid="stSidebar"] form button * {
+        color: #dc2626 !important;
+        font-weight: 800 !important;
+        font-size: 14px !important;
+    }
+    [data-testid="stSidebar"] form button:hover {
+        background-color: #ffeeef !important;
+        border-color: #ffeeef !important;
+    }
+    [data-testid="stSidebar"] form button:hover * {
+        color: #991b1b !important;
+    }
+    /* Mensajes (éxito/error) dentro de la barra lateral: texto oscuro legible */
+    [data-testid="stSidebar"] [data-testid="stAlert"] *,
+    [data-testid="stSidebar"] [data-testid="stAlertContainer"] * {
+        color: #1e293b !important;
+    }
+
     .header-container {
         background-color: #dc2626;
         padding: 14px 22px;
