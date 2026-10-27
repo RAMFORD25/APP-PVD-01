@@ -3,7 +3,9 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, date, timedelta, timezone
 import base64
+import hashlib
 import hmac
+import secrets as _secrets
 import json
 import re
 import gspread
@@ -370,9 +372,74 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.user = None
 
+HOJA_USUARIOS = "Usuarios"  # pestaña (se crea sola) con las claves cambiadas por los usuarios
+CLAVE_MIN = 8
+
+def _hash_clave(clave, sal=None):
+    sal = sal or _secrets.token_hex(16)
+    h = hashlib.pbkdf2_hmac("sha256", clave.encode("utf-8"), bytes.fromhex(sal), 200_000).hex()
+    return f"pbkdf2${sal}${h}"
+
+def _coincide(clave, guardada):
+    try:
+        _, sal, _ = guardada.split("$")
+        return hmac.compare_digest(_hash_clave(clave, sal), guardada)
+    except Exception:
+        return False
+
+@st.cache_resource
+def _hoja_usuarios():
+    libro = get_hoja().spreadsheet
+    try:
+        return libro.worksheet(HOJA_USUARIOS)
+    except gspread.WorksheetNotFound:
+        ws = libro.add_worksheet(title=HOJA_USUARIOS, rows=50, cols=3)
+        ws.update(range_name="A1:C1", values=[["usuario", "clave", "fecha_cambio"]], value_input_option="RAW")
+        return ws
+
+def _fila_usuario(ws, usr):
+    for i, v in enumerate(ws.col_values(1), start=1):
+        if i > 1 and v.strip() == usr:
+            return i
+    return None
+
+def _clave_guardada(usr):
+    ws = _hoja_usuarios()
+    fila = _fila_usuario(ws, usr)
+    return ws.cell(fila, 2).value if fila else None
+
 def verificar_login(usr, pwd):
-    clave = st.secrets.get("passwords", {}).get(usr)
-    return usr in USUARIOS and clave is not None and hmac.compare_digest(str(clave), pwd)
+    """Clave cambiada por el usuario (hoja 'Usuarios'); si no la cambió, la inicial de Secrets."""
+    if usr not in USUARIOS:
+        return False
+    try:
+        guardada = _clave_guardada(usr)
+    except Exception as e:
+        st.sidebar.error(f"No se pudo verificar la contraseña: {e}")
+        return False
+    if guardada:
+        return _coincide(pwd, guardada)
+    inicial = st.secrets.get("passwords", {}).get(usr)
+    return inicial is not None and hmac.compare_digest(str(inicial), pwd)
+
+def cambiar_clave(usr, actual, nueva, confirmar):
+    if not verificar_login(usr, actual):
+        raise ValueError("La contraseña actual no es correcta.")
+    if nueva != confirmar:
+        raise ValueError("La nueva contraseña y su confirmación no coinciden.")
+    if len(nueva) < CLAVE_MIN:
+        raise ValueError(f"La nueva contraseña debe tener al menos {CLAVE_MIN} caracteres.")
+    if not (any(c.isalpha() for c in nueva) and any(c.isdigit() for c in nueva)):
+        raise ValueError("La nueva contraseña debe combinar letras y números.")
+    if nueva == actual:
+        raise ValueError("La nueva contraseña debe ser distinta de la actual.")
+    ws = _hoja_usuarios()
+    fila = _fila_usuario(ws, usr)
+    valores = [_hash_clave(nueva), hoy_lima().isoformat()]
+    if fila:
+        ws.update(range_name=f"B{fila}:C{fila}", values=[valores], value_input_option="RAW")
+    else:
+        ws.append_row([usr] + valores, value_input_option="RAW")
 
 # BARRA LATERAL CON CREDENCIALES DE ACCESO
 st.sidebar.title("🔐 Acceso al Sistema")
@@ -516,6 +583,19 @@ if st.sidebar.button("CERRAR SESIÓN", key="btn_logout"):
     st.session_state.user = None
     st.query_params.clear()
     st.rerun()
+
+with st.sidebar.expander("🔑 Cambiar contraseña"):
+    with st.form("form_cambiar_clave", clear_on_submit=True):
+        clave_act = st.text_input("Contraseña actual", type="password")
+        clave_nueva = st.text_input("Nueva contraseña", type="password")
+        clave_conf = st.text_input("Confirmar nueva contraseña", type="password")
+        if st.form_submit_button("Guardar nueva contraseña"):
+            try:
+                cambiar_clave(st.session_state.usr_key, clave_act, clave_nueva, clave_conf)
+            except Exception as e:
+                st.error(str(e))
+            else:
+                st.success("Contraseña actualizada. Úsela en su próximo ingreso.")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔍 Filtros de Búsqueda")
