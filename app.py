@@ -9,6 +9,7 @@ import secrets as _secrets
 import json
 import re
 import gspread
+import modulo2
 from google.oauth2.service_account import Credentials
 
 # Configuración de página con diseño ancho
@@ -107,6 +108,9 @@ st.markdown("""
         color: #1e293b !important;
     }
 
+    /* Pestañas Módulo 1 / Módulo 2 */
+    .stTabs [data-baseweb="tab"] { font-weight: 800; font-size: 1.05rem; padding: 10px 22px; }
+    .stTabs [aria-selected="true"] { color: #dc2626 !important; }
     .header-container {
         background-color: #dc2626;
         padding: 14px 22px;
@@ -614,15 +618,15 @@ def _exito(msg):
     cargar_datos.clear()
     st.rerun()
 
-# ENCABEZADO SUPERIOR DEL DASHBOARD
-st.markdown("""
-<div class="header-container">
-    <div class="header-title">DASHBOARD DE MONITOREO Y SEGUIMIENTO DE SOLICITUDES DE RECURSOS - SEDE CENTRAL & UNIDADES ZONALES</div>
-</div>
-""", unsafe_allow_html=True)
-
 if "flash" in st.session_state:
     st.success(st.session_state.pop("flash"))
+
+# ALERTAS DEL MÓDULO 2 (listas de tramos enviadas, observadas o aprobadas)
+try:
+    for _nivel, _texto in modulo2.alertas_usuario(get_hoja().spreadsheet, user, st.session_state.usr_key):
+        getattr(st, _nivel)(_texto)
+except Exception:
+    pass
 
 # BARRA LATERAL CON DATOS DE USUARIO AUTENTICADO
 st.sidebar.markdown(f"👤 **{user['nombre']}**")
@@ -657,7 +661,7 @@ with st.sidebar.expander("🔑 Cambiar contraseña"):
         (st.success if _msg[0] == "ok" else st.error)(_msg[1])
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🔍 Filtros de Búsqueda")
+st.sidebar.subheader("🔍 Filtros de Búsqueda (Módulo 1)")
 
 df_f = df.copy()
 
@@ -677,6 +681,15 @@ provincias_disponibles = ["Todas"] + sorted(list(df_f["Provincia"].dropna().uniq
 sel_prov = st.sidebar.selectbox("Provincia", provincias_disponibles)
 if sel_prov != "Todas":
     df_f = df_f[df_f["Provincia"] == sel_prov]
+
+# PESTAÑAS: MÓDULO 1 (seguimiento de solicitudes) Y MÓDULO 2 (validación de tramos)
+tab_m1, tab_m2 = st.tabs(["Módulo 1", "Módulo 2"])
+tab_m1.__enter__()  # todo lo que sigue (hasta el final del archivo) se muestra dentro de la pestaña Módulo 1
+st.markdown("""
+<div class="header-container">
+    <div class="header-title">SEGUIMIENTO DE SOLICITUDES DE RECURSOS</div>
+</div>
+""", unsafe_allow_html=True)
 
 # 1. GESTIÓN ZONAL (SI ES ESPECIALISTA ZONAL)
 if user["rol"] == "ESPECIALISTA_ZONAL":
@@ -974,3 +987,14 @@ else:
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("No se cuenta con la información necesaria en la base de datos para graficar la eficiencia.")
+
+# FIN DEL MÓDULO 1 -> MÓDULO 2
+tab_m1.__exit__(None, None, None)
+with tab_m2:
+    if user["rol"] == "SEDE_CENTRAL":
+        _df_m2 = df
+    else:
+        _provs = [p.strip().upper() for p in user["provincias"]]
+        _df_m2 = df[df["Provincia"].astype(str).str.strip().str.upper().isin(_provs)] if "Provincia" in df.columns else df
+    _hts = list(_df_m2.sort_index(ascending=False)["HT"]) if "HT" in _df_m2.columns else []
+    modulo2.render(get_hoja().spreadsheet, user, st.session_state.usr_key, _hts)
