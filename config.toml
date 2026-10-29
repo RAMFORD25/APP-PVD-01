@@ -1,0 +1,5 @@
+[theme]
+# Encabezados de las tablas más oscuros y legibles (menos cansancio visual)
+dataframeHeaderTextColor = "#1e293b"
+dataframeHeaderBackgroundColor = "#e2e8f0"
+dataframeBorderColor = "#94a3b8"
