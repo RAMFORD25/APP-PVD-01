@@ -5,6 +5,7 @@ from datetime import datetime, date, timedelta, timezone
 import base64
 import hashlib
 import hmac
+import inspect
 import secrets as _secrets
 import json
 import re
@@ -615,18 +616,9 @@ user = st.session_state.user
 
 def _exito(msg):
     st.session_state["flash"] = msg
+    st.session_state["modulo_activo"] = "Módulo 1"
     cargar_datos.clear()
     st.rerun()
-
-if "flash" in st.session_state:
-    st.success(st.session_state.pop("flash"))
-
-# ALERTAS DEL MÓDULO 2 (listas de tramos enviadas, observadas o aprobadas)
-try:
-    for _nivel, _texto in modulo2.alertas_usuario(get_hoja().spreadsheet, user, st.session_state.usr_key):
-        getattr(st, _nivel)(_texto)
-except Exception:
-    pass
 
 # BARRA LATERAL CON DATOS DE USUARIO AUTENTICADO
 st.sidebar.markdown(f"👤 **{user['nombre']}**")
@@ -683,13 +675,19 @@ if sel_prov != "Todas":
     df_f = df_f[df_f["Provincia"] == sel_prov]
 
 # PESTAÑAS: MÓDULO 1 (seguimiento de solicitudes) Y MÓDULO 2 (validación de tramos)
-tab_m1, tab_m2 = st.tabs(["Módulo 1", "Módulo 2"])
+_pestana = st.session_state.get("modulo_activo", "Módulo 1")
+_kw = {"default": _pestana} if "default" in inspect.signature(st.tabs).parameters else {}
+tab_m1, tab_m2 = st.tabs(["Módulo 1", "Módulo 2"], **_kw)  # se recuerda la pestaña tras cada acción
 tab_m1.__enter__()  # todo lo que sigue (hasta el final del archivo) se muestra dentro de la pestaña Módulo 1
 st.markdown("""
 <div class="header-container">
     <div class="header-title">SEGUIMIENTO DE SOLICITUDES DE RECURSOS</div>
 </div>
 """, unsafe_allow_html=True)
+
+if "flash" in st.session_state:
+    st.success(st.session_state.pop("flash"))
+modulo2.mostrar_avisos(get_hoja().spreadsheet, user, st.session_state.usr_key, con_flash=False)
 
 # 1. GESTIÓN ZONAL (SI ES ESPECIALISTA ZONAL)
 if user["rol"] == "ESPECIALISTA_ZONAL":
