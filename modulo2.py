@@ -531,18 +531,26 @@ def _visibles(lotes, user, usr_key):
 
 
 def alertas_usuario(libro, user, usr_key):
-    """Avisos para mostrar en la parte superior de la app: lista de (nivel, texto)."""
-    lotes = _visibles(leer(libro, HOJA_LOTES), user, usr_key)
+    """Avisos para mostrar en la parte superior de cada pestaña: lista de (nivel, texto)."""
+    crudo = leer(libro, HOJA_LOTES)
+    lotes = _visibles(crudo, user, usr_key)
     out = []
-    if lotes.empty:
-        return out
+    limite = (ahora() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
     if user["rol"] == "SEDE_CENTRAL":
         n = int((lotes["estado"] == ESTADO_ENVIADO).sum())
         if n:
             out.append(("warning", f"🔔 Hay {n} lista(s) de tramos enviadas por las unidades zonales que esperan su "
                                    "revisión (pestaña Módulo 2)."))
+        for _, l in crudo.iterrows():
+            obs, etiqueta = str(l["obs_central"]), f"{l['pliego']} ({l['mantenimiento']} {l['anio']})"
+            if l["actualizado"] < limite:
+                continue
+            if obs.startswith("Reabierta") and l["estado"] == ESTADO_ELAB:
+                out.append(("info", f"🔄 El especialista zonal reabrió para corrección la lista aprobada «{etiqueta}». "
+                                    "Le llegará nuevamente cuando la envíe."))
+            elif obs.startswith("Anulada") and l["estado"] == ESTADO_ANUL:
+                out.append(("info", f"🗑️ El especialista zonal eliminó la lista aprobada «{etiqueta}»."))
         return out
-    limite = (ahora() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
     for _, l in lotes.iterrows():
         etiqueta = f"{l['pliego']} ({l['mantenimiento']} {l['anio']})"
         if l["estado"] == ESTADO_OBS:
@@ -561,9 +569,21 @@ def _banner(titulo):
 
 
 def _flash(msg):
-    st.session_state["flash"] = msg
+    st.session_state["flash_m2"] = msg
+    st.session_state["modulo_activo"] = "Módulo 2"  # al recargar, la app se queda en el Módulo 2
     leer.clear()
     st.rerun()
+
+
+def mostrar_avisos(libro, user, usr_key, con_flash=True):
+    """Mensaje de la última acción y alertas del Módulo 2 (se muestran dentro de cada pestaña)."""
+    if con_flash and "flash_m2" in st.session_state:
+        st.success(st.session_state.pop("flash_m2"))
+    try:
+        for nivel, texto in alertas_usuario(libro, user, usr_key):
+            getattr(st, nivel)(texto)
+    except Exception:
+        pass
 
 
 def _fmt(v, dec=0):
@@ -639,20 +659,45 @@ def _panel_info(lote):
     c3.markdown(f"**Estado:** {lote['estado']}  \n**HT vinculada:** {lote['ht'] or '—'}")
     if lote["estado"] == ESTADO_OBS and lote["obs_central"]:
         st.warning(f"Observación de Sede Central: {lote['obs_central']}")
+    elif str(lote["obs_central"]).startswith("Reabierta"):
+        st.info(lote["obs_central"])
 
 
 def _panel_edicion(libro, lote, usr_key):
     lote_id, mant = lote["lote_id"], lote["mantenimiento"]
     clave_base = f"m2_base_{lote_id}_{lote['actualizado']}"
+    clave_ver = f"m2_ver_{lote_id}_{lote['actualizado']}"
     if clave_base not in st.session_state:
         t = tramos_de(libro, lote_id)
         st.session_state[clave_base] = t if len(t) else df_vacio()
+        st.session_state[clave_ver] = 0
+    base = st.session_state[clave_base].copy()
+    base.index = range(1, len(base) + 1)
+    base.index.name = "N°"
     cfg, orden = _config_editor(lote["tipo_gobierno"] == "Regional")
-    st.caption("Complete la tabla (también puede pegar filas copiadas desde Excel). Agregue tramos con la fila vacía "
-               "del final. Guarde antes de cambiar de lista.")
-    editado = st.data_editor(st.session_state[clave_base], num_rows="dynamic", column_config=cfg,
-                             column_order=orden, hide_index=True, use_container_width=True,
-                             key=f"m2_ed_{lote_id}_{lote['actualizado']}")
+    st.caption("Complete la tabla (también puede pegar filas copiadas desde Excel: primero agregue las filas que "
+               "necesite con el botón de abajo). Guarde antes de cambiar de lista.")
+    altura = min(max(35 * (len(base) + 1) + 34, 130), 620)  # deja espacio para la barra de desplazamiento
+    editado = st.data_editor(base, num_rows="fixed", column_config=cfg, column_order=orden, hide_index=False,
+                             height=altura, use_container_width=True,
+                             key=f"m2_ed_{lote_id}_{lote['actualizado']}_{st.session_state[clave_ver]}")
+
+    c1, c2, c3, c4 = st.columns(4, vertical_alignment="bottom")
+    n_add = c1.number_input("Filas a agregar", 1, 50, 1, key=f"m2_nadd_{lote_id}")
+    agregar = c2.button("➕ Agregar fila(s)", key=f"m2_add_{lote_id}", use_container_width=True)
+    n_del = c3.number_input("Quitar la fila N°", 1, max(len(editado), 1), 1, key=f"m2_ndel_{lote_id}")
+    quitar = c4.button("🗑️ Quitar fila", key=f"m2_del_{lote_id}", use_container_width=True)
+    if agregar or quitar:
+        actual = _tipificar(editado)
+        if agregar:
+            actual = pd.concat([actual] + [df_vacio()] * int(n_add), ignore_index=True)
+        elif len(actual):
+            actual = actual.drop(index=int(n_del) - 1).reset_index(drop=True)
+        st.session_state[clave_base] = actual if len(actual) else df_vacio()
+        st.session_state[clave_ver] += 1
+        st.session_state["modulo_activo"] = "Módulo 2"
+        st.rerun()
+
     d = limpiar(editado)
     errores, avisos = validar(d, lote) if len(d) else ([], [])
     st.markdown("##### Resultado de los cálculos")
@@ -686,8 +731,35 @@ def _panel_edicion(libro, lote, usr_key):
         with st.expander("🗑️ Anular esta lista"):
             if st.checkbox("Confirmo que deseo anular la lista", key=f"m2_anul_c_{lote_id}") and \
                     st.button("Anular lista", key=f"m2_anul_{lote_id}"):
-                actualizar_lote(libro, lote_id, {"estado": ESTADO_ANUL})
+                reabierta = str(lote["obs_central"]).startswith("Reabierta")
+                actualizar_lote(libro, lote_id, {"estado": ESTADO_ANUL,
+                                                 "obs_central": "Anulada por el especialista zonal (estaba aprobada)."
+                                                 if reabierta else ""})
                 _flash("La lista fue anulada.")
+
+
+def _panel_correccion(libro, lote, usr_key):
+    """Solo especialistas zonales: corregir o eliminar una lista ya aprobada."""
+    lote_id = lote["lote_id"]
+    st.markdown("---")
+    st.markdown("##### Corrección de la lista aprobada")
+    st.caption("Si necesita corregir algo, reabra la lista para editarla: se retira la aprobación y deberá enviarla de "
+               "nuevo a Sede Central, que solo recibe el Anexo cuando la lista vuelve a quedar revisada y conciliada. "
+               "También puede eliminar la lista.")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("✏️ Reabrir para editar", key=f"m2_reabrir_{lote_id}", use_container_width=True):
+            actualizar_lote(libro, lote_id, {
+                "estado": ESTADO_ELAB,
+                "obs_central": f"Reabierta por {usr_key} el {ts()} (aprobada el {lote['fecha_revision']}). "
+                               "Requiere nueva aprobación de Sede Central."})
+            _flash("La lista fue reabierta: edítela y envíela nuevamente a Sede Central.")
+    with c2:
+        conf = st.checkbox("Confirmo que deseo eliminar esta lista aprobada", key=f"m2_elim_c_{lote_id}")
+        if st.button("🗑️ Eliminar lista", key=f"m2_elim_{lote_id}", disabled=not conf, use_container_width=True):
+            actualizar_lote(libro, lote_id, {"estado": ESTADO_ANUL,
+                                             "obs_central": "Anulada por el especialista zonal (estaba aprobada)."})
+            _flash("La lista fue eliminada.")
 
 
 def _panel_lectura(libro, lote, con_revision, usr_key):
@@ -719,6 +791,8 @@ def _panel_lectura(libro, lote, con_revision, usr_key):
                 _flash("Lista observada y devuelta al especialista zonal.")
     if lote["estado"] == ESTADO_APROB:
         _panel_descarga(lote, d)
+        if not con_revision:
+            _panel_correccion(libro, lote, usr_key)
 
 
 def _panel_descarga(lote, d):
@@ -742,6 +816,7 @@ def _panel_descarga(lote, d):
 def render(libro, user, usr_key, hts_visibles):
     es_central = user["rol"] == "SEDE_CENTRAL"
     _banner(TITULO)
+    mostrar_avisos(libro, user, usr_key)
     try:
         lotes = leer(libro, HOJA_LOTES)
         leer(libro, HOJA_TRAMOS)
