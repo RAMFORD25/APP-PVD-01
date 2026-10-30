@@ -809,7 +809,8 @@ if user["rol"] == "ESPECIALISTA_ZONAL":
                 num_tram = st.number_input("Número de Tramos", min_value=1, value=1)
                 mes_ing = st.selectbox("Mes", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Setiembre", "Octubre", "Noviembre", "Diciembre"])
             with col_f3:
-                tipo_t = st.selectbox("Tipo de Trámite", ["Solicitud de recursos", "Recursos RNU"])
+                TIPOS_TRAMITE = ["Solicitud de recursos", "Recursos RNU", "Programación", "Validación", "Uso de Saldo"]
+                tipo_t = st.selectbox("Tipo de Trámite", TIPOS_TRAMITE)
                 estado_z = st.selectbox("Estado Zonal", ["En revisión", "Opinión favorable", "Observado"])
                 fec_ing = st.date_input("Fecha Ingreso Zonal", hoy_lima(), format="DD/MM/YYYY")
                 
