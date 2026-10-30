@@ -498,56 +498,159 @@ def cambiar_clave(usr, actual, nueva, confirmar):
 st.sidebar.title("🔐 Acceso al Sistema")
 st.sidebar.markdown("---")
 
+VERIFICACION_SEGURIDAD = True  # False = sin código de verificación en el acceso
+
 if not st.session_state.logged_in:
-    # Formulario: envía de una vez lo escrito o autocompletado por el navegador (y funciona con Enter)
-    with st.sidebar.form("form_login"):
-        usr = st.text_input("Usuario", autocomplete="username")
-        pwd = st.text_input("Contraseña", type="password", autocomplete="current-password")
-        enviar_login = st.form_submit_button("INICIAR SESIÓN")
+    img_logo_b64 = img_to_base64(["logo_provias.png"])
+    if "cap_n" not in st.session_state:
+        st.session_state.cap_n = 0
+    if "cap_code" not in st.session_state:
+        st.session_state.cap_code = f"{_secrets.randbelow(10000):04d}"
 
-    if enviar_login:
-        usr = usr.strip().lower()
-        if verificar_login(usr, pwd):
-            st.session_state.logged_in = True
-            st.session_state.user = USUARIOS[usr]
-            st.session_state.usr_key = usr
-            st.rerun()
-        else:
-            st.sidebar.error("Usuario o contraseña incorrectos.")
-    
-    st.sidebar.markdown("<br><br>", unsafe_allow_html=True)
-    st.sidebar.markdown("<p style='text-align: center; font-size: 13px; font-weight: bold; margin-bottom: 8px; color: white;'>ENLACES DE INTERÉS MEF</p>", unsafe_allow_html=True)
-    
-    html_transp = f'<img src="data:image/png;base64,{img_transp_b64}" style="max-height: 45px; width: auto; border-radius: 4px; background-color: white; padding: 4px;" alt="Consulta Amigable"/>' if img_transp_b64 else '<span style="font-size: 13px; font-weight: bold; color: white;">Consulta Amigable</span>'
-    html_transf = f'<img src="data:image/png;base64,{img_transf_b64}" style="max-height: 45px; width: auto; border-radius: 4px; background-color: white; padding: 4px;" alt="Consulta Transferencia"/>' if img_transf_b64 else '<span style="font-size: 13px; font-weight: bold; color: white;">Consulta Transferencia</span>'
-
-    st.sidebar.markdown(
-        f"""
-        <div style="text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; padding-bottom: 20px;">
-            <a href="https://apps5.mineco.gob.pe/transparencia/Navegador/default.aspx?y=2026&ap=Actividad" target="_blank" title="Consulta Amigable MEF">
-                {html_transp}
-            </a>
-            <a href="https://apps5.mineco.gob.pe/transferencias/gl/default.aspx" target="_blank" title="Consulta de Transferencias MEF">
-                {html_transf}
-            </a>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    
-    # ENCABEZADO INSTITUCIONAL PRINCIPAL
-    st.markdown("""
-        <div style="background-color: #dc2626; padding: 25px; border-radius: 8px; color: white; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.2);">
-            <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 800;">PROVÍAS DESCENTRALIZADO</h1>
-            <h3 style="color: #fef2f2; margin-top: 8px; font-weight: normal; font-size: 17px;">COORDINACIÓN DE MANTENIMIENTO VIAL — GERENCIA DE MONITOREO Y SEGUIMIENTO (GMS)</h3>
-        </div>
+    ICO_USUARIO = ("url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' "
+                   "viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='1.8' stroke-linecap='round' "
+                   "stroke-linejoin='round'><circle cx='12' cy='8' r='4'/><path d='M4 21c0-4 4-7 8-7s8 3 8 7'/></svg>\")")
+    ICO_CLAVE = ("url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' "
+                 "viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='1.8' stroke-linecap='round' "
+                 "stroke-linejoin='round'><rect x='5' y='11' width='14' height='9' rx='2'/><path d='M8 11V8a4 4 0 0 1 8 0v3'/></svg>\")")
+    st.markdown(f"""
+    <style>
+    .stApp {{ background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 55%, #e2e8f0 100%) !important; }}
+    [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"] {{ display: none !important; }}
+    [data-testid="stMainBlockContainer"] {{ max-width: 1160px !important; margin: 0 auto !important; }}
+    .st-key-login_card {{ max-width: 100%; margin: 18px auto 34px auto; border-radius: 26px; overflow: hidden;
+        background: #ffffff; box-shadow: 0 30px 60px -18px rgba(15, 23, 42, 0.30); }}
+    .st-key-login_card [data-testid="stHorizontalBlock"] {{ gap: 0 !important; align-items: stretch !important; }}
+    .st-key-login_card [data-testid="stColumn"]:first-child, .st-key-login_card [data-testid="column"]:first-child {{
+        background: linear-gradient(165deg, #0a1e36 0%, #0d2a47 55%, #123a60 100%); padding: 0 !important; }}
+    .st-key-login_card [data-testid="stColumn"]:last-child, .st-key-login_card [data-testid="column"]:last-child {{
+        background: #ffffff; padding: 34px 44px 26px 44px !important; }}
+    .lg-izq {{ min-height: 690px; padding: 36px 40px; display: flex; flex-direction: column; justify-content: space-between; color: #fff; }}
+    .lg-badge {{ display: inline-flex; align-items: center; gap: 12px; padding: 9px 16px 9px 10px; border-radius: 12px;
+        background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); font-size: 12px; font-weight: 800;
+        letter-spacing: 1.6px; width: fit-content; }}
+    .lg-barra {{ width: 56px; height: 4px; border-radius: 4px; background: #f43f5e; margin-bottom: 26px; }}
+    .lg-sigla {{ font-size: 54px; font-weight: 800; line-height: 1; color: #ffffff; letter-spacing: -1px; }}
+    .lg-nombre {{ font-size: 40px; font-weight: 800; line-height: 1.12; color: #cbd5e1; letter-spacing: -1px; margin-top: 4px; }}
+    .lg-desc {{ margin-top: 26px; font-size: 15px; line-height: 1.7; color: #e2e8f0; max-width: 380px; }}
+    .lg-pie {{ display: inline-flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 12px; width: fit-content;
+        background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); font-size: 13px; font-weight: 600; color: #e2e8f0; }}
+    .lg-logo {{ height: 50px; width: auto; max-width: 100%; display: block; margin-bottom: 20px; }}
+    .lg-sistema {{ font-size: 11px; font-weight: 800; letter-spacing: 1.6px; color: #475569; display: flex; align-items: center; gap: 8px; }}
+    .lg-sistema::before {{ content: ""; width: 7px; height: 7px; border-radius: 50%; background: #dc2626; display: inline-block; }}
+    .lg-bienvenido {{ font-size: 36px; font-weight: 800; color: #0f172a; margin: 6px 0 2px 0; letter-spacing: -1px; line-height: 1.15; }}
+    .lg-sub {{ font-size: 13px; color: #64748b; margin-bottom: 14px; }}
+    .lg-olvido summary {{ list-style: none; cursor: pointer; text-align: right; font-size: 12.5px; font-weight: 700; color: #b91c1c; margin: -4px 0 10px 0; }}
+    .lg-olvido summary::-webkit-details-marker {{ display: none; }}
+    .lg-olvido div {{ font-size: 12.5px; color: #334155; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }}
+    .lg-verif {{ border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 12px; padding: 12px 14px 10px 14px; margin: 4px 0 8px 0; }}
+    .lg-verif-t {{ font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 8px; }}
+    .lg-verif-c {{ font-size: 13.5px; color: #475569; }}
+    .lg-codigo {{ display: inline-block; background: #dc2626; color: #fff; font-weight: 800; letter-spacing: 4px; padding: 3px 12px; border-radius: 6px; margin-left: 6px; font-size: 14px; }}
+    .lg-mef {{ border-top: 1px solid #e2e8f0; margin-top: 16px; padding-top: 12px; text-align: center; font-size: 12.5px; color: #475569; font-weight: 600; }}
+    .lg-mef-links {{ display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 8px; flex-wrap: wrap; }}
+    .lg-mef-links img {{ height: 34px; width: auto; border: 1px solid #e2e8f0; border-radius: 6px; padding: 3px; background: #fff; }}
+    .lg-mef-links a {{ color: #b91c1c; font-weight: 700; text-decoration: none; }}
+    /* campos y botón del formulario */
+    .st-key-login_card [data-testid="stForm"] {{ border: none !important; padding: 0 !important; }}
+    .st-key-login_card [data-testid="stTextInput"] label p {{ font-size: 13px !important; font-weight: 700 !important; color: #0f172a !important; }}
+    .st-key-login_card [data-testid="stTextInputRootElement"], .st-key-login_card [data-baseweb="input"], .st-key-login_card [data-baseweb="base-input"] {{ background: #eaf0fb !important; border: 1px solid #dbe4f5 !important; border-radius: 10px !important; }}
+    .st-key-login_card [data-baseweb="input"] input {{ background-color: transparent !important; color: #0f172a !important; height: 42px; }}
+    .st-key-login_card input[aria-label="Usuario"] {{ background-image: {ICO_USUARIO}; background-repeat: no-repeat; background-position: 12px center; padding-left: 40px !important; }}
+    .st-key-login_card input[aria-label="Contraseña"] {{ background-image: {ICO_CLAVE}; background-repeat: no-repeat; background-position: 12px center; padding-left: 40px !important; }}
+    .st-key-login_card [data-testid="stFormSubmitButton"] {{ width: 100% !important; }}
+    .st-key-login_card [data-testid="stFormSubmitButton"] button, .st-key-login_card form button {{
+        width: 100% !important; min-height: 46px; border: none !important; border-radius: 11px !important; margin-top: 6px;
+        background: linear-gradient(180deg, #e11d48 0%, #c81e3a 100%) !important; box-shadow: 0 10px 20px -8px rgba(200, 30, 58, 0.55); }}
+    .st-key-login_card [data-testid="stFormSubmitButton"] button *, .st-key-login_card form button * {{
+        color: #ffffff !important; font-weight: 800 !important; font-size: 15px !important; }}
+    .st-key-login_card [data-testid="stFormSubmitButton"] button:hover {{ filter: brightness(1.07); }}
+    @media (max-width: 768px) {{ .lg-izq {{ min-height: auto; gap: 24px; }} .st-key-login_card [data-testid="stColumn"]:last-child {{ padding: 26px 22px !important; }} }}
+    </style>
     """, unsafe_allow_html=True)
 
-    # TÍTULO DE LA PLATAFORMA FORMAL
-    st.markdown('<div class="formal-subtitle">🌐 PLATAFORMA DE MONITOREO Y GESTIÓN</div>', unsafe_allow_html=True)
-    st.write("Sistema informático orientado al seguimiento, control de estados y tramitación de recursos para el mantenimiento rutinario de caminos vecinales a nivel nacional.")
-    st.markdown("<br>", unsafe_allow_html=True)
-    
+    logo_html = (f'<img class="lg-logo" src="data:image/png;base64,{img_logo_b64}" alt="Provías Descentralizado">'
+                 if img_logo_b64 else '<div style="font-size:20px;font-weight:800;color:#0f172a;margin-bottom:18px;">PROVÍAS <span style="font-weight:500;">Descentralizado</span></div>')
+    ico_edificio = ("<svg width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='#e2e8f0' stroke-width='1.8' "
+                    "stroke-linecap='round' stroke-linejoin='round'><rect x='4' y='3' width='9' height='18' rx='1'/>"
+                    "<path d='M13 9h6a1 1 0 0 1 1 1v11H13M7 7h3M7 11h3M7 15h3'/></svg>")
+    ico_escudo = ("<svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='#e2e8f0' stroke-width='1.8' "
+                  "stroke-linecap='round' stroke-linejoin='round'><path d='M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z'/>"
+                  "<path d='M9 12l2 2 4-4'/></svg>")
+
+    with st.container(key="login_card"):
+        col_izq, col_der = st.columns(2, gap="small")
+        with col_izq:
+            st.markdown(f"""
+            <div class="lg-izq">
+                <div class="lg-badge">{ico_edificio}<span>PROVÍAS DESCENTRALIZADO</span></div>
+                <div>
+                    <div class="lg-barra"></div>
+                    <div class="lg-sigla">GMS</div>
+                    <div class="lg-nombre">Plataforma de Monitoreo y Gestión</div>
+                    <div class="lg-desc">Sistema informático orientado al seguimiento, control de estados y tramitación
+                    de recursos para el mantenimiento rutinario de caminos vecinales a nivel nacional.</div>
+                </div>
+                <div class="lg-pie">{ico_escudo}<span>Gerencia de Monitoreo y Seguimiento</span></div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_der:
+            st.markdown(f"""
+            {logo_html}
+            <div class="lg-sistema">COORDINACIÓN DE MANTENIMIENTO VIAL</div>
+            <div class="lg-bienvenido">Bienvenido</div>
+            <div class="lg-sub">Ingresa tus credenciales para acceder a tu cuenta.</div>
+            """, unsafe_allow_html=True)
+            # Formulario: envía de una vez lo escrito o autocompletado por el navegador (y funciona con Enter)
+            with st.form("form_login"):
+                usr = st.text_input("Usuario", autocomplete="username")
+                pwd = st.text_input("Contraseña", type="password", autocomplete="current-password")
+                st.markdown("""
+                <details class="lg-olvido"><summary>¿Olvidaste tu contraseña?</summary>
+                <div>Comuníquese con Sede Central (GMS) para restablecer su contraseña. Si usted la cambió desde la
+                aplicación, Sede Central puede devolverle la contraseña inicial.</div></details>
+                """, unsafe_allow_html=True)
+                cod = ""
+                if VERIFICACION_SEGURIDAD:
+                    st.markdown(f"""
+                    <div class="lg-verif"><div class="lg-verif-t">🛡️ Verificación de seguridad</div>
+                    <div class="lg-verif-c">Escriba los números: <span class="lg-codigo">{st.session_state.cap_code}</span></div></div>
+                    """, unsafe_allow_html=True)
+                    cod = st.text_input("Código de verificación", max_chars=4, placeholder="Escriba los 4 números",
+                                        autocomplete="off", label_visibility="collapsed",
+                                        key=f"login_cod_{st.session_state.cap_n}")
+                enviar_login = st.form_submit_button("Iniciar sesión  →", use_container_width=True)
+
+            if "login_msg" in st.session_state:
+                st.error(st.session_state.pop("login_msg"))
+            if enviar_login:
+                usr = usr.strip().lower()
+                if VERIFICACION_SEGURIDAD and cod.strip() != st.session_state.cap_code:
+                    st.session_state.login_msg = "El código de verificación no coincide. Intente con el nuevo código."
+                elif verificar_login(usr, pwd):
+                    st.session_state.logged_in = True
+                    st.session_state.user = USUARIOS[usr]
+                    st.session_state.usr_key = usr
+                    st.session_state.cap_n += 1
+                    st.session_state.cap_code = f"{_secrets.randbelow(10000):04d}"
+                    st.rerun()
+                else:
+                    st.session_state.login_msg = "Usuario o contraseña incorrectos."
+                if "login_msg" in st.session_state:  # nuevo código y campo de verificación vacío
+                    st.session_state.cap_n += 1
+                    st.session_state.cap_code = f"{_secrets.randbelow(10000):04d}"
+                    st.rerun()
+
+            enlace_amigable = (f'<a href="https://apps5.mineco.gob.pe/transparencia/Navegador/default.aspx?y=2026&ap=Actividad" target="_blank" title="Consulta Amigable MEF">'
+                               + (f'<img src="data:image/png;base64,{img_transp_b64}" alt="Consulta Amigable">' if img_transp_b64 else "Consulta Amigable") + "</a>")
+            enlace_transf = (f'<a href="https://apps5.mineco.gob.pe/transferencias/gl/default.aspx" target="_blank" title="Consulta de Transferencias MEF">'
+                             + (f'<img src="data:image/png;base64,{img_transf_b64}" alt="Consulta Transferencia">' if img_transf_b64 else "Consulta Transferencia") + "</a>")
+            st.markdown(f"""
+            <div class="lg-mef">Enlaces de interés MEF
+                <div class="lg-mef-links">{enlace_amigable}{enlace_transf}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
     # TARJETAS DE BIENVENIDA CON COLORES Y PLOTLY
     col_w1, col_w2, col_w3 = st.columns(3)
     
@@ -608,8 +711,6 @@ if not st.session_state.logged_in:
         else:
             st.info("Cargando validaciones GMS...")
 
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.info("👈 **Instrucción:** Por favor, ingrese su usuario y contraseña asignados en el panel lateral izquierdo para acceder al sistema.")
     st.stop()
 
 user = st.session_state.user
