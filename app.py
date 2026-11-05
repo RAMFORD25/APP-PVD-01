@@ -11,6 +11,7 @@ import json
 import re
 import gspread
 import modulo2
+import modulo3
 from google.oauth2.service_account import Credentials
 
 # Configuración de página con diseño ancho
@@ -778,7 +779,7 @@ if sel_prov != "Todas":
 # PESTAÑAS: MÓDULO 1 (seguimiento de solicitudes) Y MÓDULO 2 (validación de tramos)
 _pestana = st.session_state.get("modulo_activo", "Módulo 1")
 _kw = {"default": _pestana} if "default" in inspect.signature(st.tabs).parameters else {}
-tab_m1, tab_m2 = st.tabs(["Módulo 1", "Módulo 2"], **_kw)  # se recuerda la pestaña tras cada acción
+tab_m1, tab_m2, tab_m3 = st.tabs(["Módulo 1", "Módulo 2", "Módulo 3"], **_kw)  # se recuerda la pestaña tras cada acción
 tab_m1.__enter__()  # todo lo que sigue (hasta el final del archivo) se muestra dentro de la pestaña Módulo 1
 st.markdown("""
 <div class="header-container">
@@ -1098,3 +1099,6 @@ with tab_m2:
         _df_m2 = df[df["Provincia"].astype(str).str.strip().str.upper().isin(_provs)] if "Provincia" in df.columns else df
     _hts = list(_df_m2.sort_index(ascending=False)["HT"]) if "HT" in _df_m2.columns else []
     modulo2.render(get_hoja().spreadsheet, user, st.session_state.usr_key, _hts)
+
+with tab_m3:
+    modulo3.render(get_hoja().spreadsheet, user, st.session_state.usr_key)
